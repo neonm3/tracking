@@ -1,10 +1,53 @@
 #include "MilManager.h"
 #include <algorithm>
 #include <cstring>
+#include <sstream>
 
 static inline void setErr(std::string& dst, const std::string& msg)
 {
 	dst = msg;
+}
+
+template <typename T>
+static std::string toString(const T& value)
+{
+	std::ostringstream oss;
+	oss << value;
+	return oss.str();
+}
+
+static void blitTile(std::vector<uint8_t>& outRGBA, int outWidth, int gridCols, int camIdx,
+                     const std::vector<uint8_t>& src, int srcW, int srcH)
+{
+	const int col = camIdx % gridCols;
+	const int row = camIdx / gridCols;
+	const int dstX0 = col * srcW;
+	const int dstY0 = row * srcH;
+	for (int y = 0; y < srcH; y++)
+	{
+		uint8_t* dstLine = outRGBA.data() + ((size_t)(dstY0 + y) * outWidth + dstX0) * 4;
+		const uint8_t* srcLine = src.data() + (size_t)y * srcW * 4;
+		std::memcpy(dstLine, srcLine, (size_t)srcW * 4);
+	}
+}
+
+MilManager::MilManager()
+#if defined(HAVE_MIL)
+	: _appId(M_NULL)
+	, _sysId(M_NULL)
+#endif
+{
+}
+
+MilManager::Dig::Dig()
+	: allocated(false)
+	, deviceNum(-1)
+	, digId(M_NULL)
+	, grabBuf(M_NULL)
+	, sizeX(0)
+	, sizeY(0)
+	, bands(0)
+{
 }
 
 MilManager& MilManager::instance()
@@ -25,7 +68,7 @@ bool MilManager::builtWithMil() const
 bool MilManager::hasSystem() const
 {
 #if defined(HAVE_MIL)
-	std::lock_guard<std::mutex> lk(_mtx);
+	LockGuard lk(_mtx);
 	return _sysId != M_NULL;
 #else
 	return false;
@@ -34,16 +77,20 @@ bool MilManager::hasSystem() const
 
 std::string MilManager::summaryLine() const
 {
-	std::lock_guard<std::mutex> lk(_mtx);
+	LockGuard lk(_mtx);
 #if !defined(HAVE_MIL)
 	return "MIL: disabled at compile time (HAVE_MIL not defined)";
 #else
 	int allocated = 0;
-	for (const auto& d : _digs) if (d.allocated) allocated++;
+	for (size_t i = 0; i < _digs.size(); i++)
+	{
+		if (_digs[i].allocated)
+			allocated++;
+	}
 	std::string s = "MIL: compiled=yes";
 	s += std::string(" app=") + (_appId ? "ok" : "no");
 	s += std::string(" sys=") + (_sysId ? "ok" : "no");
-	s += " digs_allocated=" + std::to_string(allocated);
+	s += " digs_allocated=" + toString(allocated);
 	return s;
 #endif
 }
@@ -53,7 +100,7 @@ std::string MilManager::dumpDevices(int maxDev, bool verbose)
 	if (maxDev < 1) maxDev = 1;
 	if (maxDev > 256) maxDev = 256;
 
-	std::lock_guard<std::mutex> lk(_mtx);
+	LockGuard lk(_mtx);
 
 #if !defined(HAVE_MIL)
 	return "Cannot dump devices: built without MIL (define HAVE_MIL).";
@@ -68,7 +115,7 @@ std::string MilManager::dumpDevices(int maxDev, bool verbose)
 	out.reserve(4096);
 	out += "MIL Digitizer Probe (MdigAlloc)\n";
 	out += "System allocated: " + std::string(_sysId ? "yes" : "no") + "\n";
-	out += "Probing indices 0.." + std::to_string(maxDev - 1) + "\n\n";
+	out += "Probing indices 0.." + toString(maxDev - 1) + "\n\n";
 
 	for (int dev = 0; dev < maxDev; dev++)
 	{
@@ -81,7 +128,7 @@ std::string MilManager::dumpDevices(int maxDev, bool verbose)
 			MdigInquire(dig, M_SIZE_X, &sx);
 			MdigInquire(dig, M_SIZE_Y, &sy);
 			MdigInquire(dig, M_SIZE_BAND, &sb);
-			out += "[OK] dev=" + std::to_string(dev) + " size=" + std::to_string((int)sx) + "x" + std::to_string((int)sy) + " bands=" + std::to_string((int)sb) + "\n";
+			out += "[OK] dev=" + toString(dev) + " size=" + toString((int)sx) + "x" + toString((int)sy) + " bands=" + toString((int)sb) + "\n";
 			if (verbose)
 			{
 				// Try to query a couple of common strings if available. Not all MIL builds support these.
@@ -91,7 +138,7 @@ std::string MilManager::dumpDevices(int maxDev, bool verbose)
 		}
 		else
 		{
-			out += "[--] dev=" + std::to_string(dev) + " (alloc failed)\n";
+			out += "[--] dev=" + toString(dev) + " (alloc failed)\n";
 		}
 	}
 
@@ -106,7 +153,7 @@ MilManager::~MilManager()
 
 std::string MilManager::lastError() const
 {
-	std::lock_guard<std::mutex> lk(_mtx);
+	LockGuard lk(_mtx);
 	return _lastError;
 }
 
@@ -147,8 +194,7 @@ bool MilManager::allocDig(Dig& d, int deviceNum, const std::string& dcfPath)
 	if (!ensureSystem())
 		return false;
 
-	// Allocate digitizer
-	const MIL_STRING dcf = dcfPath.empty() ? MIL_TEXT("M_DEFAULT") : MIL_TEXT("");
+	// Allocate digitizer.
 	// Note: MIL_TEXT only wraps string literals; if you pass a runtime path, use MIL_STRING conversion.
 	// We support runtime path below.
 	MIL_ID digId = M_NULL;
@@ -170,7 +216,7 @@ bool MilManager::allocDig(Dig& d, int deviceNum, const std::string& dcfPath)
 
 	if (!digId)
 	{
-		setErr(_lastError, "MdigAlloc failed for device " + std::to_string(deviceNum));
+		setErr(_lastError, "MdigAlloc failed for device " + toString(deviceNum));
 		return false;
 	}
 
@@ -189,7 +235,7 @@ bool MilManager::allocDig(Dig& d, int deviceNum, const std::string& dcfPath)
 	if (!buf)
 	{
 		MdigFree(digId);
-		setErr(_lastError, "MbufAllocColor failed for device " + std::to_string(deviceNum));
+		setErr(_lastError, "MbufAllocColor failed for device " + toString(deviceNum));
 		return false;
 	}
 
@@ -212,12 +258,12 @@ void MilManager::freeDig(Dig& d)
 	if (d.grabBuf) { MbufFree(d.grabBuf); d.grabBuf = M_NULL; }
 	if (d.digId) { MdigFree(d.digId); d.digId = M_NULL; }
 #endif
-	d = Dig{};
+	d = Dig();
 }
 
 bool MilManager::ensureDigitizer(int deviceNum, const std::string& dcfPath)
 {
-	std::lock_guard<std::mutex> lk(_mtx);
+	LockGuard lk(_mtx);
 
 	if (deviceNum < 0)
 	{
@@ -245,11 +291,11 @@ bool MilManager::ensureDigitizer(int deviceNum, const std::string& dcfPath)
 
 bool MilManager::grabToRGBA8(int deviceNum, std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight)
 {
-	std::lock_guard<std::mutex> lk(_mtx);
+	LockGuard lk(_mtx);
 
 	if (deviceNum < 0 || deviceNum >= (int)_digs.size() || !_digs[deviceNum].allocated)
 	{
-		setErr(_lastError, "Digitizer not allocated for device " + std::to_string(deviceNum));
+		setErr(_lastError, "Digitizer not allocated for device " + toString(deviceNum));
 		return false;
 	}
 
@@ -331,21 +377,7 @@ bool MilManager::grabGridToRGBA8(int cameraCount, int gridCols, int deviceOffset
 	outRGBA.assign((size_t)outWidth*outHeight*4, 0);
 
 	// Copy first tile already grabbed.
-	auto blit = [&](int camIdx, const std::vector<uint8_t>& src, int srcW, int srcH)
-	{
-		const int col = camIdx % gridCols;
-		const int row = camIdx / gridCols;
-		const int dstX0 = col * srcW;
-		const int dstY0 = row * srcH;
-		for (int y=0; y<srcH; y++)
-		{
-			uint8_t* dstLine = outRGBA.data() + ((size_t)(dstY0 + y) * outWidth + dstX0) * 4;
-			const uint8_t* srcLine = src.data() + (size_t)y * srcW * 4;
-			std::memcpy(dstLine, srcLine, (size_t)srcW * 4);
-		}
-	};
-
-	blit(0, tile, tileW, tileH);
+	blitTile(outRGBA, outWidth, gridCols, 0, tile, tileW, tileH);
 
 	// Grab remaining cameras
 	for (int i=1; i<cameraCount; i++)
@@ -363,7 +395,7 @@ bool MilManager::grabGridToRGBA8(int cameraCount, int gridCols, int deviceOffset
 		if (w != tileW || h != tileH)
 			continue;
 
-		blit(i, frame, w, h);
+		blitTile(outRGBA, outWidth, gridCols, i, frame, w, h);
 	}
 
 	return true;
@@ -371,11 +403,11 @@ bool MilManager::grabGridToRGBA8(int cameraCount, int gridCols, int deviceOffset
 
 void MilManager::shutdown()
 {
-	std::lock_guard<std::mutex> lk(_mtx);
-	for (auto& d : _digs)
+	LockGuard lk(_mtx);
+	for (size_t i = 0; i < _digs.size(); i++)
 	{
-		if (d.allocated)
-			freeDig(d);
+		if (_digs[i].allocated)
+			freeDig(_digs[i]);
 	}
 	_digs.clear();
 
