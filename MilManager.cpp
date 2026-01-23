@@ -2,11 +2,72 @@
 #include <algorithm>
 #include <cstring>
 #include <sstream>
+#include <type_traits>
+#include <utility>
 
 static inline void setErr(std::string& dst, const std::string& msg)
 {
 	dst = msg;
 }
+
+#if defined(HAVE_MIL)
+static std::basic_string<MIL_TEXT_CHAR> toMilText(const std::string& src)
+{
+	std::basic_string<MIL_TEXT_CHAR> out;
+	out.reserve(src.size());
+	for (size_t i = 0; i < src.size(); i++)
+	{
+		out.push_back(static_cast<MIL_TEXT_CHAR>(src[i]));
+	}
+	return out;
+}
+
+template <typename T>
+struct HasMbufGetColor2d7
+{
+private:
+	template <typename U>
+	static auto test(int) -> decltype(
+		MbufGetColor2d(
+			std::declval<MIL_ID>(),
+			std::declval<MIL_INT>(),
+			std::declval<MIL_INT>(),
+			std::declval<MIL_INT>(),
+			std::declval<MIL_INT>(),
+			std::declval<MIL_INT>(),
+			static_cast<void*>(nullptr)),
+		std::true_type());
+
+	template <typename>
+	static std::false_type test(...);
+
+public:
+	static const bool value = decltype(test<T>(0))::value;
+};
+
+static void bufGetColor2dImpl(std::true_type, MIL_ID buf, MIL_INT band, MIL_INT x, MIL_INT y,
+                              MIL_INT sizeX, MIL_INT sizeY, void* dst)
+{
+	MbufGetColor2d(buf, band, x, y, sizeX, sizeY, dst);
+}
+
+static void bufGetColor2dImpl(std::false_type, MIL_ID buf, MIL_INT band, MIL_INT x, MIL_INT y,
+                              MIL_INT sizeX, MIL_INT sizeY, void* dst)
+{
+	uint8_t* out = static_cast<uint8_t*>(dst);
+	for (MIL_INT row = 0; row < sizeY; row++)
+	{
+		MbufGetColor2d(buf, band, x, y + row, sizeX, out + static_cast<size_t>(row) * sizeX);
+	}
+}
+
+static void bufGetColor2d(MIL_ID buf, MIL_INT band, MIL_INT x, MIL_INT y,
+                          MIL_INT sizeX, MIL_INT sizeY, void* dst)
+{
+	bufGetColor2dImpl(std::integral_constant<bool, HasMbufGetColor2d7<void>::value>(),
+	                  buf, band, x, y, sizeX, sizeY, dst);
+}
+#endif
 
 template <typename T>
 static std::string toString(const T& value)
@@ -121,7 +182,7 @@ std::string MilManager::dumpDevices(int maxDev, bool verbose)
 	{
 		MIL_ID dig = M_NULL;
 		// Try autoconfig first (M_DEFAULT).
-		MdigAlloc(_sysId, dev, M_DEFAULT, M_DEFAULT, &dig);
+		MdigAlloc(_sysId, dev, MIL_TEXT("M_DEFAULT"), M_DEFAULT, &dig);
 		if (dig)
 		{
 			MIL_INT sx = 0, sy = 0, sb = 0;
@@ -201,17 +262,12 @@ bool MilManager::allocDig(Dig& d, int deviceNum, const std::string& dcfPath)
 
 	if (dcfPath.empty())
 	{
-		MdigAlloc(_sysId, deviceNum, M_DEFAULT, M_DEFAULT, &digId);
+		MdigAlloc(_sysId, deviceNum, MIL_TEXT("M_DEFAULT"), M_DEFAULT, &digId);
 	}
 	else
 	{
-		// Runtime string to MIL_STRING
-		#if M_MIL_UNICODE_API
-			std::wstring w(dcfPath.begin(), dcfPath.end());
-			MdigAlloc(_sysId, deviceNum, w.c_str(), M_DEFAULT, &digId);
-		#else
-			MdigAlloc(_sysId, deviceNum, dcfPath.c_str(), M_DEFAULT, &digId);
-		#endif
+		std::basic_string<MIL_TEXT_CHAR> dcfText = toMilText(dcfPath);
+		MdigAlloc(_sysId, deviceNum, dcfText.c_str(), M_DEFAULT, &digId);
 	}
 
 	if (!digId)
@@ -339,9 +395,9 @@ bool MilManager::grabToRGBA8(int deviceNum, std::vector<uint8_t>& outRGBA, int& 
 	else
 	{
 		// Get each band
-		MbufGetColor2d(d.grabBuf, M_RED,   0,0,w,h, b0.data());
-		MbufGetColor2d(d.grabBuf, M_GREEN, 0,0,w,h, b1.data());
-		MbufGetColor2d(d.grabBuf, M_BLUE,  0,0,w,h, b2.data());
+		bufGetColor2d(d.grabBuf, M_RED,   0, 0, w, h, b0.data());
+		bufGetColor2d(d.grabBuf, M_GREEN, 0, 0, w, h, b1.data());
+		bufGetColor2d(d.grabBuf, M_BLUE,  0, 0, w, h, b2.data());
 		for (size_t i = 0, n = (size_t)w*h; i < n; i++)
 		{
 			outRGBA[i*4+0] = b0[i];
