@@ -75,15 +75,19 @@ public:
 
     bool builtWithMil() const;
     bool hasSystem() const;
+    // Returns a one-line status summary for MIL allocation state.
     std::string summaryLine() const;
+    // Probes digitizers via MdigAlloc. maxDev is clamped to 1..256 in the implementation.
     std::string dumpDevices(int maxDev = 64, bool verbose = false);
 
     void shutdown();
 
     std::string lastError() const;
 
+    // Ensures a digitizer is allocated for deviceNum (reallocates if dcfPath changes).
     bool ensureDigitizer(int deviceNum, const std::string& dcfPath);
     bool grabToRGBA8(int deviceNum, std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight);
+    // Grabs multiple cameras into a tiled RGBA buffer. cameraCount is clamped to 1..24.
     bool grabGridToRGBA8(int cameraCount, int gridCols, int deviceOffset, const std::string& dcfPath,
                          std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight);
 
