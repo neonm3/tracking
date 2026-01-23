@@ -11,14 +11,64 @@ typedef long long MIL_INT;
 #endif
 
 #include <cstdint>
-#include <mutex>
 #include <string>
 #include <vector>
+
+#if defined(_MSC_VER)
+  #if _MSC_VER >= 1700
+    #define MILMANAGER_HAS_STD_MUTEX 1
+  #endif
+#else
+  #if __cplusplus >= 201103L
+    #define MILMANAGER_HAS_STD_MUTEX 1
+  #endif
+#endif
+
+#if MILMANAGER_HAS_STD_MUTEX
+  #include <mutex>
+#endif
+
+namespace mil_detail
+{
+#if MILMANAGER_HAS_STD_MUTEX
+    typedef std::mutex Mutex;
+    template <typename T>
+    class LockGuard
+    {
+    public:
+        explicit LockGuard(T& mutex) : _mutex(mutex) { _mutex.lock(); }
+        ~LockGuard() { _mutex.unlock(); }
+    private:
+        T& _mutex;
+        LockGuard(const LockGuard&);
+        LockGuard& operator=(const LockGuard&);
+    };
+#else
+    class Mutex
+    {
+    public:
+        void lock() {}
+        void unlock() {}
+    };
+
+    template <typename T>
+    class LockGuard
+    {
+    public:
+        explicit LockGuard(T& mutex) : _mutex(mutex) { _mutex.lock(); }
+        ~LockGuard() { _mutex.unlock(); }
+    private:
+        T& _mutex;
+        LockGuard(const LockGuard&);
+        LockGuard& operator=(const LockGuard&);
+    };
+#endif
+}
 
 class MilManager
 {
 public:
-    MilManager() = default;
+    MilManager();
     ~MilManager();
 
     static MilManager& instance();
@@ -37,36 +87,41 @@ public:
     bool grabGridToRGBA8(int cameraCount, int gridCols, int deviceOffset, const std::string& dcfPath,
                          std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight);
 
-    MilManager(const MilManager&) = delete;
-    MilManager& operator=(const MilManager&) = delete;
-
 private:
+    typedef mil_detail::Mutex Mutex;
+    typedef mil_detail::LockGuard<Mutex> LockGuard;
+
 #ifdef HAVE_MIL
-    MIL_ID _appId = M_NULL;
-    MIL_ID _sysId = M_NULL;
+    MIL_ID _appId;
+    MIL_ID _sysId;
 #endif
 
     struct Dig
     {
-        bool allocated = false;
-        int deviceNum = -1;
+        Dig();
+
+        bool allocated;
+        int deviceNum;
         std::string dcfPath;
-        MIL_ID digId = M_NULL;
-        MIL_ID grabBuf = M_NULL;
-        MIL_INT sizeX = 0;
-        MIL_INT sizeY = 0;
-        MIL_INT bands = 0;
+        MIL_ID digId;
+        MIL_ID grabBuf;
+        MIL_INT sizeX;
+        MIL_INT sizeY;
+        MIL_INT bands;
     };
 
     bool ensureSystem();
     bool allocDig(Dig& d, int deviceNum, const std::string& dcfPath);
     void freeDig(Dig& d);
 
-    mutable std::mutex _mtx;
+    mutable Mutex _mtx;
     std::vector<Dig> _digs;
     std::string _lastError;
 
 private:
+    MilManager(const MilManager&);
+    MilManager& operator=(const MilManager&);
+
 #ifdef HAVE_MIL
     // If you want DCF support later: implement UTF8->MIL_TEXT conversion here.
 #endif
