@@ -10,50 +10,64 @@ typedef long long MIL_INT;
 #endif
 #endif
 
+#include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
 class MilManager
 {
 public:
-    MilManager();
+    MilManager() = default;
     ~MilManager();
 
-    // Call once (or lazily). Returns false on failure; check lastError().
-    bool init(const std::string& dcfPathUtf8, int deviceIndex);
+    static MilManager& instance();
+
+    bool builtWithMil() const;
+    bool hasSystem() const;
+    std::string summaryLine() const;
+    std::string dumpDevices(int maxDev = 64, bool verbose = false);
 
     void shutdown();
 
-    bool isReady() const { return m_ready; }
+    std::string lastError() const;
 
-    // Grabs a frame into internal MIL buffer and copies to outRGBA (size = w*h*4).
-    // Returns false on failure.
-    bool grabToRGBA(std::vector<unsigned char>& outRGBA);
+    bool ensureDigitizer(int deviceNum, const std::string& dcfPath);
+    bool grabToRGBA8(int deviceNum, std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight);
+    bool grabGridToRGBA8(int cameraCount, int gridCols, int deviceOffset, const std::string& dcfPath,
+                         std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight);
 
-    int width() const { return (int)m_sizeX; }
-    int height() const { return (int)m_sizeY; }
-    int bands() const { return (int)m_bands; } // should be 1 for Mono8
-
-    const std::string& lastError() const { return m_lastError; }
+    MilManager(const MilManager&) = delete;
+    MilManager& operator=(const MilManager&) = delete;
 
 private:
 #ifdef HAVE_MIL
-    MIL_ID m_app = M_NULL;
-    MIL_ID m_sys = M_NULL;
-    MIL_ID m_dig = M_NULL;
-    MIL_ID m_bufMono = M_NULL;
+    MIL_ID _appId = M_NULL;
+    MIL_ID _sysId = M_NULL;
 #endif
 
-    MIL_INT m_sizeX = 0;
-    MIL_INT m_sizeY = 0;
-    MIL_INT m_bands = 0;
+    struct Dig
+    {
+        bool allocated = false;
+        int deviceNum = -1;
+        std::string dcfPath;
+        MIL_ID digId = M_NULL;
+        MIL_ID grabBuf = M_NULL;
+        MIL_INT sizeX = 0;
+        MIL_INT sizeY = 0;
+        MIL_INT bands = 0;
+    };
 
-    bool m_ready = false;
-    std::string m_lastError;
+    bool ensureSystem();
+    bool allocDig(Dig& d, int deviceNum, const std::string& dcfPath);
+    void freeDig(Dig& d);
+
+    mutable std::mutex _mtx;
+    std::vector<Dig> _digs;
+    std::string _lastError;
 
 private:
 #ifdef HAVE_MIL
-    void setMilError(const char* where);
     // If you want DCF support later: implement UTF8->MIL_TEXT conversion here.
 #endif
 };
