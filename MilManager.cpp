@@ -2,8 +2,6 @@
 #include <algorithm>
 #include <cstring>
 #include <sstream>
-#include <type_traits>
-#include <utility>
 
 static inline void setErr(std::string& dst, const std::string& msg)
 {
@@ -22,50 +20,15 @@ static std::basic_string<MIL_TEXT_CHAR> toMilText(const std::string& src)
 	return out;
 }
 
-template <typename T>
-struct HasMbufGetColor2d7
-{
-private:
-	template <typename U>
-	static auto test(int) -> decltype(
-		MbufGetColor2d(
-			std::declval<MIL_ID>(),
-			std::declval<MIL_INT>(),
-			std::declval<MIL_INT>(),
-			std::declval<MIL_INT>(),
-			std::declval<MIL_INT>(),
-			std::declval<MIL_INT>(),
-			static_cast<void*>(nullptr)),
-		std::true_type());
-
-	template <typename>
-	static std::false_type test(...);
-
-public:
-	static const bool value = decltype(test<T>(0))::value;
-};
-
-static void bufGetColor2dImpl(std::true_type, MIL_ID buf, MIL_INT band, MIL_INT x, MIL_INT y,
-                              MIL_INT sizeX, MIL_INT sizeY, void* dst)
-{
-	MbufGetColor2d(buf, band, x, y, sizeX, sizeY, dst);
-}
-
-static void bufGetColor2dImpl(std::false_type, MIL_ID buf, MIL_INT band, MIL_INT x, MIL_INT y,
-                              MIL_INT sizeX, MIL_INT sizeY, void* dst)
-{
-	uint8_t* out = static_cast<uint8_t*>(dst);
-	for (MIL_INT row = 0; row < sizeY; row++)
-	{
-		MbufGetColor2d(buf, band, x, y + row, sizeX, out + static_cast<size_t>(row) * sizeX);
-	}
-}
-
 static void bufGetColor2d(MIL_ID buf, MIL_INT band, MIL_INT x, MIL_INT y,
                           MIL_INT sizeX, MIL_INT sizeY, void* dst)
 {
-	bufGetColor2dImpl(std::integral_constant<bool, HasMbufGetColor2d7<void>::value>(),
-	                  buf, band, x, y, sizeX, sizeY, dst);
+	MIL_ID child = M_NULL;
+	MbufChildColor(buf, band, &child);
+	if (!child)
+		return;
+	MbufGet2d(child, x, y, sizeX, sizeY, dst);
+	MbufFree(child);
 }
 #endif
 
