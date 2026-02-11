@@ -22,12 +22,6 @@ constexpr static char EnableLabel[] = "Enable";
 constexpr static char CameraIndexName[] = "Cameraindex";
 constexpr static char CameraIndexLabel[] = "Camera Index";
 
-constexpr static char OutputModeName[] = "Outputmode";
-constexpr static char OutputModeLabel[] = "Output Mode";
-
-constexpr static char GridColsName[] = "Gridcols";
-constexpr static char GridColsLabel[] = "Grid Columns";
-
 constexpr static char DcfPathName[] = "Dcfpath";
 constexpr static char DcfPathLabel[] = "DCF Path";
 
@@ -45,8 +39,6 @@ struct GevIQ24Params
 {
 	bool enable = true;
 	int cameraIndex = 0;     // 0..23
-	int outputMode = 0;      // 0=Selected, 1=Grid (composite)
-	int gridCols = 6;        // for grid mode (e.g. 6 -> 6x4 = 24)
 	std::string dcfPath;     // optional: path to DCF (or leave empty for M_DEFAULT)
 	int deviceOffset = 0;    // add to cameraIndex to map to MIL dig dev numbers
 	int debugLevel = 0;      // 0=Off, 1=Basic, 2=Verbose

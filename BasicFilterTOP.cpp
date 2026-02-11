@@ -141,12 +141,9 @@ void BasicFilterTOP::execute(TOP_Output* output, const OP_Inputs* inputs, void* 
 	bool ok = mil.builtWithMil();
 	int w=0,h=0;
 
-	if (ok && myParams.outputMode == 1)
+	if (ok)
 	{
-		ok = mil.grabGridToRGBA8(24, myParams.gridCols, myParams.deviceOffset, myParams.dcfPath, myRGBA, w, h);
-	}
-	else if (ok)
-	{
+		// Always grab the selected camera from execute().
 		ok = mil.ensureDigitizer(devNum, myParams.dcfPath) && mil.grabToRGBA8(devNum, myRGBA, w, h);
 	}
 
@@ -155,7 +152,6 @@ void BasicFilterTOP::execute(TOP_Output* output, const OP_Inputs* inputs, void* 
 	{
 		std::string s;
 		s += "camIdx=" + std::to_string(camIdx) + " devNum=" + std::to_string(devNum);
-		s += " mode=" + std::string(myParams.outputMode == 1 ? "Grid" : "Selected");
 		s += " dcf='" + (myParams.dcfPath.empty() ? std::string("<M_DEFAULT>") : myParams.dcfPath) + "'";
 		s += " | " + mil.summaryLine();
 		if (!ok)

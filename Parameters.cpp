@@ -31,26 +31,6 @@ void SetupParameters(OP_ParameterManager* manager)
 	}
 	{
 		OP_StringParameter sp;
-		sp.name = OutputModeName;
-		sp.label = OutputModeLabel;
-		sp.defaultValue = "Selected";
-		const char* names[] = { "Selected", "Grid" };
-		const char* labels[] = { "Selected", "Grid (24-up)" };
-		manager->appendMenu(sp, 2, names, labels);
-	}
-	{
-		OP_NumericParameter np;
-		np.name = GridColsName;
-		np.label = GridColsLabel;
-		np.minSliders[0] = 1;
-		np.maxSliders[0] = 12;
-		np.minValues[0] = 1;
-		np.maxValues[0] = 24;
-		np.defaultValues[0] = 6;
-		manager->appendInt(np);
-	}
-	{
-		OP_StringParameter sp;
 		sp.name = DcfPathName;
 		sp.label = DcfPathLabel;
 		sp.defaultValue = "";
@@ -88,8 +68,6 @@ void GevIQ24Params::load(const OP_Inputs* inputs)
 {
 	enable = inputs->getParInt(EnableName) != 0;
 	cameraIndex = inputs->getParInt(CameraIndexName);
-	outputMode = inputs->getParInt(OutputModeName);
-	gridCols = std::max(1, inputs->getParInt(GridColsName));
 	dcfPath = inputs->getParString(DcfPathName) ? inputs->getParString(DcfPathName) : "";
 	deviceOffset = inputs->getParInt(DeviceOffsetName);
 	debugLevel = inputs->getParInt(DebugLevelName);

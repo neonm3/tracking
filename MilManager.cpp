@@ -40,21 +40,6 @@ static std::string toString(const T& value)
 	return oss.str();
 }
 
-static void blitTile(std::vector<uint8_t>& outRGBA, int outWidth, int gridCols, int camIdx,
-                     const std::vector<uint8_t>& src, int srcW, int srcH)
-{
-	const int col = camIdx % gridCols;
-	const int row = camIdx / gridCols;
-	const int dstX0 = col * srcW;
-	const int dstY0 = row * srcH;
-	for (int y = 0; y < srcH; y++)
-	{
-		uint8_t* dstLine = outRGBA.data() + ((size_t)(dstY0 + y) * outWidth + dstX0) * 4;
-		const uint8_t* srcLine = src.data() + (size_t)y * srcW * 4;
-		std::memcpy(dstLine, srcLine, (size_t)srcW * 4);
-	}
-}
-
 MilManager::MilManager()
 #if defined(HAVE_MIL)
 	: _appId(M_NULL)
@@ -372,52 +357,6 @@ bool MilManager::grabToRGBA8(int deviceNum, std::vector<uint8_t>& outRGBA, int& 
 
 	return true;
 #endif
-}
-
-bool MilManager::grabGridToRGBA8(int cameraCount, int gridCols, int deviceOffset, const std::string& dcfPath,
-                                 std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight)
-{
-	// Avoid std::clamp to stay compatible with older MSVC language modes.
-	if (cameraCount < 1) cameraCount = 1;
-	if (cameraCount > 24) cameraCount = 24;
-	gridCols = std::max(1, gridCols);
-	const int gridRows = (cameraCount + gridCols - 1) / gridCols;
-
-	// Grab first camera to establish tile size
-	int tileW=0, tileH=0;
-	std::vector<uint8_t> tile;
-	if (!ensureDigitizer(deviceOffset, dcfPath))
-		return false;
-	if (!grabToRGBA8(deviceOffset, tile, tileW, tileH))
-		return false;
-
-	outWidth = tileW * gridCols;
-	outHeight = tileH * gridRows;
-	outRGBA.assign((size_t)outWidth*outHeight*4, 0);
-
-	// Copy first tile already grabbed.
-	blitTile(outRGBA, outWidth, gridCols, 0, tile, tileW, tileH);
-
-	// Grab remaining cameras
-	for (int i=1; i<cameraCount; i++)
-	{
-		const int dev = deviceOffset + i;
-		if (!ensureDigitizer(dev, dcfPath))
-			continue;
-
-		int w=0,h=0;
-		std::vector<uint8_t> frame;
-		if (!grabToRGBA8(dev, frame, w, h))
-			continue;
-
-		// If a camera has different resolution, skip it for now.
-		if (w != tileW || h != tileH)
-			continue;
-
-		blitTile(outRGBA, outWidth, gridCols, i, frame, w, h);
-	}
-
-	return true;
 }
 
 void MilManager::shutdown()

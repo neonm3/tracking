@@ -87,10 +87,6 @@ public:
     // Ensures a digitizer is allocated for deviceNum (reallocates if dcfPath changes).
     bool ensureDigitizer(int deviceNum, const std::string& dcfPath);
     bool grabToRGBA8(int deviceNum, std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight);
-    // Grabs multiple cameras into a tiled RGBA buffer. cameraCount is clamped to 1..24.
-    bool grabGridToRGBA8(int cameraCount, int gridCols, int deviceOffset, const std::string& dcfPath,
-                         std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight);
-
 private:
     typedef mil_detail::Mutex Mutex;
     typedef mil_detail::LockGuard<Mutex> LockGuard;
