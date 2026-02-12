@@ -1,132 +1,143 @@
 #pragma once
 
-#ifdef HAVE_MIL
-#include <mil.h>
-#else
-typedef long long MIL_ID;
-typedef long long MIL_INT;
-#ifndef M_NULL
-#define M_NULL 0
-#endif
-#endif
-
-#include <cstdint>
 #include <string>
 #include <vector>
+#include <mutex>
 
-#if defined(_MSC_VER)
-  #if _MSC_VER >= 1700
-    #define MILMANAGER_HAS_STD_MUTEX 1
-  #endif
-#else
-  #if __cplusplus >= 201103L
-    #define MILMANAGER_HAS_STD_MUTEX 1
-  #endif
+#include <cstdint>
+
+#if defined(HAVE_MIL)
+#include <mil.h>
 #endif
-
-#if MILMANAGER_HAS_STD_MUTEX
-  #include <mutex>
-#endif
-
-namespace mil_detail
-{
-#if MILMANAGER_HAS_STD_MUTEX
-    typedef std::mutex Mutex;
-    template <typename T>
-    class LockGuard
-    {
-    public:
-        explicit LockGuard(T& mutex) : _mutex(mutex) { _mutex.lock(); }
-        ~LockGuard() { _mutex.unlock(); }
-    private:
-        T& _mutex;
-        LockGuard(const LockGuard&);
-        LockGuard& operator=(const LockGuard&);
-    };
-#else
-    class Mutex
-    {
-    public:
-        void lock() {}
-        void unlock() {}
-    };
-
-    template <typename T>
-    class LockGuard
-    {
-    public:
-        explicit LockGuard(T& mutex) : _mutex(mutex) { _mutex.lock(); }
-        ~LockGuard() { _mutex.unlock(); }
-    private:
-        T& _mutex;
-        LockGuard(const LockGuard&);
-        LockGuard& operator=(const LockGuard&);
-    };
-#endif
-}
 
 class MilManager
 {
+
 public:
+    static MilManager& instance();
+
+
+
+    bool builtWithMil() const;
+    std::string summaryLine() const;
+    std::string dumpDevices() const;
+
+    std::string diagnostics_NoLock() const;
+
+    // optional but useful for UI logs
+    const std::string& lastError() const;
+
+    // Ensure digitizer allocated (camIdx: 0 => M_DEV0, 1 => M_DEV1, etc.)
+    bool ensureDigitizer(int camIdx);
+
+    // Convenience overloads (use whichever your BasicFilterTOP uses)
+    bool grabToRGBA8(int camIdx, int width, int height, std::vector<uint8_t>& outRGBA);
+    bool grabToRGBA8(int camIdx, int width, int height, uint8_t* outRGBA, size_t outBytes);
+
+    bool grabGridToRGBA8(int gridCols, int gridRows, int tileW, int tileH, std::vector<uint8_t>& outRGBA);
+    bool grabGridToRGBA8(int gridCols, int gridRows, int tileW, int tileH, uint8_t* outRGBA, size_t outBytes);
+
+
+    // --- Compatibility shims -------------------------------------------------
+ // Some older call sites pass extra "unused" parameters (e.g. logging flags,
+ // stride, etc.). These templated overloads intentionally ignore trailing args
+ // and forward to the canonical implementations above.
+
+    template<typename... Extra>
+    std::string dumpDevices(Extra&&...) const { return dumpDevices(); }
+
+    template<typename... Extra>
+    bool ensureDigitizer(int camIdx, Extra&&...) { return ensureDigitizer(camIdx); }
+
+    // grabToRGBA8 compatibility shims
+    template<typename... Extra>
+    bool grabToRGBA8(int camIdx, int width, int height,
+        std::vector<uint8_t>& outRGBA, Extra&&...)
+    {
+        return grabToRGBA8(camIdx, width, height, outRGBA);
+    }
+
+    template<typename Ptr, typename Size, typename... Extra,
+        typename = std::enable_if_t<std::is_pointer_v<std::decay_t<Ptr>> && !std::is_same_v<std::decay_t<Ptr>, std::vector<uint8_t>*>>>
+    bool grabToRGBA8(int camIdx, int width, int height,
+        Ptr outRGBA, Size outBytes, Extra&&...)
+    {
+        using Pointee = std::remove_pointer_t<std::decay_t<Ptr>>;
+        using BytePtr = std::conditional_t<std::is_const_v<Pointee>, const uint8_t*, uint8_t*>;
+
+        return grabToRGBA8(camIdx, width, height,
+            reinterpret_cast<BytePtr>(outRGBA),
+            static_cast<size_t>(outBytes));
+    }
+
+    // grabGridToRGBA8 compatibility shims
+    template<typename... Extra>
+    bool grabGridToRGBA8(int gridCols, int gridRows, int tileW, int tileH,
+        std::vector<uint8_t>& outRGBA, Extra&&...)
+    {
+        return grabGridToRGBA8(gridCols, gridRows, tileW, tileH, outRGBA);
+    }
+
+    template<typename Ptr, typename Size, typename... Extra,
+        typename = std::enable_if_t<std::is_pointer_v<std::decay_t<Ptr>> && !std::is_same_v<std::decay_t<Ptr>, std::vector<uint8_t>*>>>
+    bool grabGridToRGBA8(int gridCols, int gridRows, int tileW, int tileH,
+        Ptr outRGBA, Size outBytes, Extra&&...)
+    {
+        using Pointee = std::remove_pointer_t<std::decay_t<Ptr>>;
+        using BytePtr = std::conditional_t<std::is_const_v<Pointee>, const uint8_t*, uint8_t*>;
+
+        return grabGridToRGBA8(gridCols, gridRows, tileW, tileH,
+            reinterpret_cast<BytePtr>(outRGBA),
+            static_cast<size_t>(outBytes));
+    }
+
+private:
     MilManager();
     ~MilManager();
 
-    static MilManager& instance();
+    MilManager(const MilManager&) = delete;
+    MilManager& operator=(const MilManager&) = delete;
 
-    bool builtWithMil() const;
-    bool hasSystem() const;
-    // Returns a one-line status summary for MIL allocation state.
-    std::string summaryLine() const;
-    // Probes digitizers via MdigAlloc. maxDev is clamped to 1..256 in the implementation.
-    std::string dumpDevices(int maxDev = 64, bool verbose = false);
 
-    void shutdown();
+    // System selection cache
+    MIL_STRING _cachedSysDesc;
+    MIL_INT    _cachedSysDevNum = 0;
 
-    std::string lastError() const;
+    // MIL UI spam guard
+    bool _milErrorPrintDisabled = false;
+    bool _sysAllocAttempted = false;
 
-    // Ensures a digitizer is allocated for deviceNum (reallocates if dcfPath changes).
-    bool ensureDigitizer(int deviceNum, const std::string& dcfPath);
-    bool grabToRGBA8(int deviceNum, std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight);
-    // Grabs multiple cameras into a tiled RGBA buffer. cameraCount is clamped to 1..24.
-    bool grabGridToRGBA8(int cameraCount, int gridCols, int deviceOffset, const std::string& dcfPath,
-                         std::vector<uint8_t>& outRGBA, int& outWidth, int& outHeight);
+    // Digitizer discovery
+    std::vector<MIL_INT> _validDigDevs;
+    std::string _lastProbeReport;
+
+    void probeDigitizerAllocStyles_NoLock();
 
 private:
-    typedef mil_detail::Mutex Mutex;
-    typedef mil_detail::LockGuard<Mutex> LockGuard;
-
-#ifdef HAVE_MIL
-    MIL_ID _appId;
-    MIL_ID _sysId;
-#endif
-
+#if defined(HAVE_MIL)
     struct Dig
     {
-        Dig();
-
-        bool allocated;
-        int deviceNum;
-        std::string dcfPath;
-        MIL_ID digId;
-        MIL_ID grabBuf;
-        MIL_INT sizeX;
-        MIL_INT sizeY;
-        MIL_INT bands;
+        MIL_ID dig = M_NULL;
+        MIL_ID grabBuf = M_NULL;   // 8-bit mono buffer (simple + robust)
+        MIL_INT w = 0;
+        MIL_INT h = 0;
     };
+#endif
 
     bool ensureSystem();
-    bool allocDig(Dig& d, int deviceNum, const std::string& dcfPath);
-    void freeDig(Dig& d);
-
-    mutable Mutex _mtx;
-    std::vector<Dig> _digs;
-    std::string _lastError;
+    bool discoverDigitizers_NoLock();
+#if defined(HAVE_MIL)
+    bool allocDig(int camIdx);
+    void freeDig(int camIdx);
+#endif
 
 private:
-    MilManager(const MilManager&);
-    MilManager& operator=(const MilManager&);
+    mutable std::recursive_mutex _mtx;
+    std::string _lastError;
 
-#ifdef HAVE_MIL
-    // If you want DCF support later: implement UTF8->MIL_TEXT conversion here.
+#if defined(HAVE_MIL)
+    MIL_ID _appId = M_NULL;
+    MIL_ID _sysId = M_NULL;
+    std::vector<Dig> _digs;
 #endif
 };

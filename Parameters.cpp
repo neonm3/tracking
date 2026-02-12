@@ -76,12 +76,6 @@ void SetupParameters(OP_ParameterManager* manager)
 		const char* labels[] = { "Off", "Basic", "Verbose" };
 		manager->appendMenu(sp, 3, names, labels);
 	}
-	{
-		OP_NumericParameter np;
-		np.name = DumpDevicesName;
-		np.label = DumpDevicesLabel;
-		manager->appendPulse(np);
-	}
 }
 
 void GevIQ24Params::load(const OP_Inputs* inputs)

@@ -38,7 +38,6 @@ constexpr static char DebugLevelName[] = "Debuglevel";
 constexpr static char DebugLevelLabel[] = "Debug Level";
 
 constexpr static char DumpDevicesName[] = "Dumpdevices";
-constexpr static char DumpDevicesLabel[] = "Dump MIL Devices";
 
 // Small helper to read parameters
 struct GevIQ24Params

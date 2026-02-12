@@ -75,16 +75,13 @@ void BasicFilterTOP::getInfoPopupString(OP_String* info, void* reserved)
 
 void BasicFilterTOP::pulsePressed(const char* name, void* reserved)
 {
-	if (!name)
-		return;
-	if (std::string(name) == DumpDevicesName)
-	{
+
 		MilManager& mil = MilManager::instance();
 		const bool verbose = myParams.debugLevel >= 2;
 		myInfo = mil.dumpDevices(64, verbose);
 		myWarning = "Dumped MIL device probe to Info popup.";
 		myError.clear();
-	}
+	
 }
 
 void BasicFilterTOP::setupParameters(OP_ParameterManager* manager, void* reserved)
@@ -143,11 +140,15 @@ void BasicFilterTOP::execute(TOP_Output* output, const OP_Inputs* inputs, void* 
 
 	if (ok && myParams.outputMode == 1)
 	{
-		ok = mil.grabGridToRGBA8(24, myParams.gridCols, myParams.deviceOffset, myParams.dcfPath, myRGBA, w, h);
+		int gridCols = myParams.gridCols;
+		int gridRows = myParams.gridCols; // or whatever it should be
+		int tileW = w / gridCols;
+		int tileH = h / gridRows;
+		ok = mil.grabGridToRGBA8(gridCols, gridRows, tileW, tileH, myRGBA, w * h * 4);
 	}
 	else if (ok)
 	{
-		ok = mil.ensureDigitizer(devNum, myParams.dcfPath) && mil.grabToRGBA8(devNum, myRGBA, w, h);
+		ok = mil.ensureDigitizer(devNum) && mil.grabToRGBA8(devNum, w, h, myRGBA, w * h * 4);
 	}
 
 	// Debug status strings
