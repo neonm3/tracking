@@ -582,6 +582,19 @@ static inline void grayToRGBA(const uint8_t* gray, int w, int h, uint8_t* rgba)
     }
 }
 
+bool MilManager::grabToRGBA8(int camIdx, int width, int height, std::vector<uint8_t>& outRGBA)
+{
+    if (width <= 0 || height <= 0)
+    {
+        outRGBA.clear();
+        return false;
+    }
+
+    const size_t need = (size_t)width * (size_t)height * 4u;
+    outRGBA.resize(need);
+    return grabToRGBA8(camIdx, width, height, outRGBA.data(), outRGBA.size());
+}
+
 bool MilManager::grabToRGBA8(int camIdx, int width, int height, uint8_t* outRGBA, size_t outBytes)
 {
     if (!outRGBA) return false;
